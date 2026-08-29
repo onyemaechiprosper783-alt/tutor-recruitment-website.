@@ -6,9 +6,6 @@ const criteriaError = document.getElementById('criteriaError');
 const agreementError = document.getElementById('agreementError');
 const criteriaInputs = [...document.querySelectorAll('input[name="criteria"]')];
 
-const SUPABASE_URL = 'https://letakjckpnpdiqwiuohc.supabase.co';
-const SUPABASE_ANON_KEY = window.SUPABASE_CONFIG?.anonKey || '';
-
 function getSchedule() {
   const selected = criteriaInputs.filter(i => i.checked).map(i => i.value);
   if (selected.length === 2) return '7:00 PM — 11:00 PM';
@@ -28,8 +25,7 @@ function setError(field, message) {
   const label = field.closest('label');
   const error = label?.querySelector('.error');
   if (error) error.textContent = message;
-  if (message) field.setAttribute('aria-invalid', 'true');
-  else field.removeAttribute('aria-invalid');
+  if (message) field.setAttribute('aria-invalid', 'true'); else field.removeAttribute('aria-invalid');
 }
 function validate() {
   let valid = true;
@@ -55,24 +51,22 @@ function status(message, type = 'error') {
 }
 
 async function submitApplication(data) {
-  if (!SUPABASE_ANON_KEY) throw new Error('Supabase publishable key is not configured.');
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/submit_tutor_recruitment_application`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-    body: JSON.stringify({
-      p_full_name: data.fullName, p_email: data.email, p_phone: data.phone,
-      p_location: data.location, p_criteria: data.criteria, p_subject: data.subject,
-      p_experience: data.experience, p_about: data.about, p_teaching_window: data.teachingWindow
-    })
+  const res = await fetch('/api/submit', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-  return res.json();
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(result.detail || result.error || `Submission failed (${res.status})`);
+  return result;
 }
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
   status('');
-  if (!validate()) return;
+  if (!validate()) {
+    const first = form.querySelector('[aria-invalid="true"]');
+    first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   const criteria = criteriaInputs.filter(i => i.checked).map(i => i.value);
   const data = Object.fromEntries(new FormData(form).entries());
   data.criteria = criteria; data.teachingWindow = getSchedule();
@@ -80,11 +74,10 @@ form.addEventListener('submit', async event => {
   submitButton.querySelector('span:first-child').textContent = 'Submitting…';
   try {
     await submitApplication(data);
-    form.outerHTML = `<div class="success"><div style="font-size:42px">✓</div><h3>Application received</h3><p>Thank you, ${data.fullName}. Your tutor application has been submitted successfully. We’ll review it and contact you using the details provided.</p></div>`;
-    document.getElementById('application').scrollIntoView({ behavior: 'smooth' });
+    form.outerHTML = `<div class="success"><div style="font-size:42px">✓</div><h3>Application received</h3><p>Thank you, ${data.fullName}. Your application has been submitted successfully. Our team will review it and contact you using the details provided.</p></div>`;
   } catch (error) {
     console.error(error);
-    status('We could not submit your application. Please try again in a moment.', 'error');
+    status(error.message.includes('environment') ? 'The application service is not configured yet. Please try again later.' : 'We could not submit your application right now. Please check your connection and try again.', 'error');
     submitButton.disabled = false;
     submitButton.querySelector('span:first-child').textContent = 'Submit application';
   }
