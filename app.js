@@ -52,10 +52,26 @@ function status(message, type = 'error') {
 }
 
 async function submitApplication(data) {
-  const res = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-  const result = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(result.detail || result.error || `Submission failed (${res.status})`);
-  return result;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch('/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(data),
+      signal: controller.signal
+    });
+    const raw = await res.text();
+    let result = {};
+    try { result = raw ? JSON.parse(raw) : {}; } catch { result = { detail: raw }; }
+    if (!res.ok) throw new Error(result.detail || result.error || `Submission failed (${res.status})`);
+    return result;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('The submission timed out. Please try again.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 form.addEventListener('submit', async event => {
@@ -69,7 +85,6 @@ form.addEventListener('submit', async event => {
   const data = Object.fromEntries(new FormData(form).entries());
   data.criteria = criteria;
   data.teachingWindow = getSchedule();
-  // Store the detailed selection answers in the existing application narrative field.
   data.about = [
     `Academic qualification: ${data.qualification}`,
     `Discipline: ${data.discipline}`,
@@ -85,14 +100,15 @@ form.addEventListener('submit', async event => {
     `Internet reliability: ${data.internet}`,
     `Additional availability information: ${data.additionalInfo}`
   ].join('\n\n');
+
   submitButton.disabled = true;
   submitButton.querySelector('span:first-child').textContent = 'Submitting…';
   try {
     await submitApplication(data);
     form.outerHTML = `<div class="success"><div style="font-size:42px">✓</div><h3>Application received</h3><p>Thank you, ${data.fullName}. Your application has been submitted successfully. Our recruitment team will review your answers and contact you using the details provided.</p></div>`;
   } catch (error) {
-    console.error(error);
-    status('We could not submit your application right now. Please check your connection and try again.', 'error');
+    console.error('Tutor application submission error:', error);
+    status(error.message || 'We could not submit your application. Please try again.', 'error');
     submitButton.disabled = false;
     submitButton.querySelector('span:first-child').textContent = 'Submit application';
   }
