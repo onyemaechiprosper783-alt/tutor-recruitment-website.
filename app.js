@@ -33,7 +33,8 @@ function validate() {
     const value = field.type === 'checkbox' ? field.checked : field.value.trim();
     if (!value) { setError(field, 'This field is required.'); valid = false; }
     else if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(field.value.trim())) { setError(field, 'Enter a valid email address.'); valid = false; }
-    else if (field.name === 'about' && field.value.trim().length < 30) { setError(field, 'Please write at least 30 characters.'); valid = false; }
+    else if (field.minLength > 0 && field.value.trim().length < field.minLength) { setError(field, `Please provide at least ${field.minLength} characters.`); valid = false; }
+    else if (field.name === 'graduationYear' && !/^\d{4}$/.test(field.value.trim())) { setError(field, 'Enter a valid 4-digit year.'); valid = false; }
     else setError(field, '');
   });
   const selected = criteriaInputs.filter(i => i.checked).map(i => i.value);
@@ -51,9 +52,7 @@ function status(message, type = 'error') {
 }
 
 async function submitApplication(data) {
-  const res = await fetch('/api/submit', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-  });
+  const res = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const result = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(result.detail || result.error || `Submission failed (${res.status})`);
   return result;
@@ -63,21 +62,37 @@ form.addEventListener('submit', async event => {
   event.preventDefault();
   status('');
   if (!validate()) {
-    const first = form.querySelector('[aria-invalid="true"]');
-    first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    form.querySelector('[aria-invalid="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
   const criteria = criteriaInputs.filter(i => i.checked).map(i => i.value);
   const data = Object.fromEntries(new FormData(form).entries());
-  data.criteria = criteria; data.teachingWindow = getSchedule();
+  data.criteria = criteria;
+  data.teachingWindow = getSchedule();
+  // Store the detailed selection answers in the existing application narrative field.
+  data.about = [
+    `Academic qualification: ${data.qualification}`,
+    `Discipline: ${data.discipline}`,
+    `Institution: ${data.institution}`,
+    `Graduation year: ${data.graduationYear}`,
+    `Teaching demonstration: ${data.demo}`,
+    `Student mistake strategy: ${data.studentMistake}`,
+    `Assessment approach: ${data.assessment}`,
+    `Support plan for struggling students: ${data.supportPlan}`,
+    `Meaningful teaching experience: ${data.experienceStory}`,
+    `Motivation: ${data.motivation}`,
+    `Device readiness: ${data.device}`,
+    `Internet reliability: ${data.internet}`,
+    `Additional availability information: ${data.additionalInfo}`
+  ].join('\n\n');
   submitButton.disabled = true;
   submitButton.querySelector('span:first-child').textContent = 'Submitting…';
   try {
     await submitApplication(data);
-    form.outerHTML = `<div class="success"><div style="font-size:42px">✓</div><h3>Application received</h3><p>Thank you, ${data.fullName}. Your application has been submitted successfully. Our team will review it and contact you using the details provided.</p></div>`;
+    form.outerHTML = `<div class="success"><div style="font-size:42px">✓</div><h3>Application received</h3><p>Thank you, ${data.fullName}. Your application has been submitted successfully. Our recruitment team will review your answers and contact you using the details provided.</p></div>`;
   } catch (error) {
     console.error(error);
-    status(error.message.includes('environment') ? 'The application service is not configured yet. Please try again later.' : 'We could not submit your application right now. Please check your connection and try again.', 'error');
+    status('We could not submit your application right now. Please check your connection and try again.', 'error');
     submitButton.disabled = false;
     submitButton.querySelector('span:first-child').textContent = 'Submit application';
   }
